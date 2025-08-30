@@ -1,0 +1,267 @@
+import { useState } from "react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
+
+export default function HisoCalculator() {
+  // helpers
+  const pct = (x:number) => (isNaN(x) ? 0 : x) / 100; // convert 0–100 to 0–1
+  const num = (v:string) => Number(v || 0);
+
+  // Organisation-level inputs (hospital/GP network)
+  const [annualTests, setAnnualTests] = useState(205000);
+  const [annualDischarges, setAnnualDischarges] = useState(90000);
+  const [duplicateTestRate, setDuplicateTestRate] = useState(12); // % of tests that are duplicates
+  const [readmitRate, setReadmitRate] = useState(9); // % 30-day readmission rate
+
+  // Admin-time productivity inputs
+  const [clinicians, setClinicians] = useState(100);
+  const [visitsPerClinician, setVisitsPerClinician] = useState(2000);
+  const [timeSavedPerVisitMin, setTimeSavedPerVisitMin] = useState(5);
+  const [clinicianWagePerHour, setClinicianWagePerHour] = useState(120);
+
+  // Compliance cost tier
+  const [hospitalSize, setHospitalSize] = useState("medium");
+  const getComplianceCost = (size:string) => {
+    switch(size) {
+      case "small": return 800000;
+      case "medium": return 1500000;
+      case "large": return 3000000;
+      default: return 1500000;
+    }
+  };
+  const investmentNZD = getComplianceCost(hospitalSize);
+
+  // Evidence-backed assumptions
+  const [testUnitCostNZD, setTestUnitCostNZD] = useState(50);
+  const [readmitCostNZD, setReadmitCostNZD] = useState(3643);
+
+  // Effect sizes
+  const [duplicateReductionPct, setDuplicateReductionPct] = useState(25); // % fewer duplicates due to interoperability
+  const [readmitReductionPct, setReadmitReductionPct] = useState(10); // % fewer readmissions due to interoperability
+  const [preventableReadmitPct, setPreventableReadmitPct] = useState(30); // % of readmits realistically preventable
+
+  // Calculations
+  const clinicianCostPerMinute = clinicianWagePerHour / 60;
+  const timeSavedTotalMinutes = clinicians * visitsPerClinician * timeSavedPerVisitMin;
+  const productivityGain = Math.round(timeSavedTotalMinutes * clinicianCostPerMinute);
+
+  const testSavings = Math.round(
+    annualTests * pct(duplicateTestRate) * pct(duplicateReductionPct) * testUnitCostNZD
+  );
+
+  const readmitSavings = Math.round(
+    annualDischarges * pct(readmitRate) * pct(readmitReductionPct) * pct(preventableReadmitPct) * readmitCostNZD
+  );
+
+  const totalAnnualSavings = productivityGain + testSavings + readmitSavings;
+  const netAnnualBenefit = totalAnnualSavings - investmentNZD;
+  const roi = (totalAnnualSavings / investmentNZD).toFixed(2);
+
+  const barData = [
+    { name: "Gross Savings", value: totalAnnualSavings },
+    { name: "Net Benefit (after HISO cost)", value: netAnnualBenefit },
+  ];
+
+  const money = (v:number) => "$" + v.toLocaleString();
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <div className="min-h-screen bg-white text-slate-900 p-6 space-y-6">
+        <h1 className="text-2xl font-bold">HISO Business Benefit Calculator</h1>
+        <p className="text-gray-700">Focus: direct financial and productivity benefits to hospitals and GP networks. All values annual, NZD.</p>
+
+        {/* Organisation Setup */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Organisation Setup</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium">Annual diagnostic tests
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="More info" className="cursor-help inline-flex items-center"><Info size={16} /></button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Default ~205,000 based on average annual test volume per NZ hospital (Figure.NZ 2021).</p>
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+              <Input type="number" inputMode="numeric" value={annualTests} onChange={(e) => setAnnualTests(num(e.target.value))} />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium">Annual hospital discharges
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="More info" className="cursor-help inline-flex items-center"><Info size={16} /></button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Default ~90,000 discharges per year (Middlemore Hospital, NZ).</p>
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+              <Input type="number" inputMode="numeric" value={annualDischarges} onChange={(e) => setAnnualDischarges(num(e.target.value))} />
+            </div>
+
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium">Duplicate test rate (%)
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="More info" className="cursor-help inline-flex items-center"><Info size={16} /></button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Enter a percent (e.g., 12 for 12%). Used with reduction % to estimate avoidable duplicates.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+              <Input type="number" inputMode="decimal" min={0} max={100} step={0.1} value={duplicateTestRate} onChange={(e) => setDuplicateTestRate(num(e.target.value))} />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium">30-day readmission rate (%)
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="More info" className="cursor-help inline-flex items-center"><Info size={16} /></button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Enter a percent (e.g., 9 for 9%).</p>
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+              <Input type="number" inputMode="decimal" min={0} max={100} step={0.1} value={readmitRate} onChange={(e) => setReadmitRate(num(e.target.value))} />
+            </div>
+
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium">Number of clinicians
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="More info" className="cursor-help inline-flex items-center"><Info size={16} /></button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Doctors, nurses, pharmacists, allied staff using the system.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+              <Input type="number" inputMode="numeric" value={clinicians} onChange={(e) => setClinicians(num(e.target.value))} />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium">Visits per clinician per year
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="More info" className="cursor-help inline-flex items-center"><Info size={16} /></button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Annual encounters each clinician handles. Used to estimate total time saved.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+              <Input type="number" inputMode="numeric" value={visitsPerClinician} onChange={(e) => setVisitsPerClinician(num(e.target.value))} />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium">Time saved per visit (minutes)
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="More info" className="cursor-help inline-flex items-center"><Info size={16} /></button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Evidence: JAMA 2023 shows ~36 min/visit in EHR; saving 5–10 min with interoperability is realistic.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+              <Input type="number" inputMode="decimal" min={0} step={0.5} value={timeSavedPerVisitMin} onChange={(e) => setTimeSavedPerVisitMin(num(e.target.value))} />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium">Clinician cost per hour (NZD)
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="More info" className="cursor-help inline-flex items-center"><Info size={16} /></button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Fully loaded hourly cost to organisation (wage + overhead).</p>
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+              <Input type="number" inputMode="decimal" min={0} step={1} value={clinicianWagePerHour} onChange={(e) => setClinicianWagePerHour(num(e.target.value))} />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium">Hospital size (affects compliance cost)
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="More info" className="cursor-help inline-flex items-center"><Info size={16} /></button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Small (≤10k discharges): $800k; Medium (10k–90k): $1.5m; Large (≥90k): $3m.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+              <select
+                className="border rounded p-2 w-full bg-white"
+                value={hospitalSize}
+                onChange={(e) => setHospitalSize(e.target.value)}
+              >
+                <option value="small">Small (≤10k discharges)</option>
+                <option value="medium">Medium (10k–90k discharges)</option>
+                <option value="large">Large (≥90k discharges)</option>
+              </select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Results */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Results Dashboard (Organisation Lens)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="bg-blue-100 p-4 rounded-xl">
+                <h2 className="text-lg font-semibold">⏱️ Admin Time Savings</h2>
+                <p className="text-xl font-bold">{money(productivityGain)} per year</p>
+              </div>
+              <div className="bg-green-100 p-4 rounded-xl">
+                <h2 className="text-lg font-semibold">🧪 Test Savings</h2>
+                <p className="text-xl font-bold">{money(testSavings)} per year</p>
+              </div>
+              <div className="bg-purple-100 p-4 rounded-xl">
+                <h2 className="text-lg font-semibold">🏥 Readmission Savings</h2>
+                <p className="text-xl font-bold">{money(readmitSavings)} per year</p>
+              </div>
+              <div className="bg-yellow-100 p-4 rounded-xl">
+                <h2 className="text-lg font-semibold">📈 ROI</h2>
+                <p className="text-xl font-bold">{roi}x</p>
+              </div>
+            </div>
+
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={barData}>
+                <XAxis dataKey="name" />
+                <YAxis tickFormatter={(v) => "$" + Number(v).toLocaleString()} />
+                <RechartsTooltip formatter={(value) => ["$" + Number(value).toLocaleString(), "Benefit"]} />
+                <Bar dataKey="value" fill="#3b82f6" />
+              </BarChart>
+            </ResponsiveContainer>
+
+            <div className="text-center text-sm text-gray-600">
+              *Net Benefit factors in HISO compliance investment of {money(investmentNZD)}.
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Evidence Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Evidence & Sources</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-gray-700">
+            <p><strong>Admin Time Savings:</strong> clinicians × visits/year × minutes saved/visit × ($/hour ÷ 60). Evidence: Primary care doctors spend ~36 min/visit in EHR (JAMA 2023, <a href="https://jamanetwork.com/journals/jamanetworkopen/fullarticle/2812258" target="_blank" className="text-blue-600 underline">link</a>).</p>
+            <p><strong>Test Savings:</strong> annual tests × (dup rate ÷ 100) × (reduction% ÷ 100) × test cost. Evidence: HIE access cut duplicate imaging ~25% (AJMC 2015, <a href="https://www.ajmc.com/view/health-information-exchange-and-the-frequency-of-repeat-medical-imaging" target="_blank" className="text-blue-600 underline">link</a>). NZ average hospital ~205,000 tests/year (Figure.NZ 2021, <a href="https://figure.nz/chart/e3YmCq1YQJAx7tdA" target="_blank" className="text-blue-600 underline">link</a>).</p>
+            <p><strong>Readmission Savings:</strong> annual discharges × (readmit rate ÷ 100) × (reduction% ÷ 100) × 30% preventable × $3,643. Evidence: AHRQ RED trial ~25% reduction (<a href="https://www.ahrq.gov/patient-safety/settings/hospital/red/toolkit/index.html" target="_blank" className="text-blue-600 underline">link</a>). NZMJ 2021 median inpatient readmission ~$3,643 NZD (<a href="https://journal.nzma.org.nz/journal-articles/health-service-use-and-readmission-following-major-trauma-in-new-zealand" target="_blank" className="text-blue-600 underline">link</a>).</p>
+            <p><strong>Compliance Investment:</strong> Small (≤10k discharges) $800k; Medium (10k–90k) $1.5m; Large (≥90k) $3m. Evidence: Global HIE implementations typically cost USD $400k–$2M (~NZD $660k–$3.3M). NHS Epic-scale projects run higher, but NZ scaling is smaller. Source: ScienceSoft (<a href="https://www.scnsoft.com/healthcare/health-information-exchange-portal" target="_blank" className="text-blue-600 underline">link</a>).</p>
+          </CardContent>
+        </Card>
+      </div>
+    </TooltipProvider>
+  );
+}
